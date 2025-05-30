@@ -1,15 +1,19 @@
-
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
-const OpenAI = require('openai');
+const { pipeline } = require('transformers');
 require('dotenv').config();
 
 const app = express();
 const prisma = new PrismaClient();
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let llamaPipeline;
+
+(async () => {
+  // Load model and tokenizer once at startup
+  llamaPipeline = await pipeline('text-generation', 'meta-llama/Meta-Llama-3-8B-Instruct', {
+    quantized: false, // set true if you want quantized model for less RAM
+  });
+})();
 
 app.use(cors());
 app.use(express.json());
@@ -37,25 +41,13 @@ app.post('/api/generate-motivation/:userId', async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: parseInt(req.params.userId) },
     });
-    
     const whys = JSON.parse(user.whys);
-    
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: "You are a motivational coach. Based on the user's core 'whys' and motivations, generate a personalized, inspiring message."
-        },
-        {
-          role: "user",
-          content: `Generate a motivational message for someone whose core motivations are: ${whys.join(', ')}`
-        }
-      ],
-      max_tokens: 200,
-    });
-    
-    const motivation = completion.choices[0].message.content;
+    const prompt = `You are a motivational coach. Based on the user's core 'whys' and motivations, generate a personalized, inspiring message.\nGenerate a motivational message for someone whose core motivations are: ${whys.join(', ')}`;
+    if (!llamaPipeline) {
+      return res.status(503).json({ error: 'Model is still loading, please try again in a moment.' });
+    }
+    const output = await llamaPipeline(prompt, { max_new_tokens: 200 });
+    const motivation = output[0]?.generated_text?.replace(prompt, '').trim() || output[0]?.generated_text || '';
     
     // Save to database
     const saved = await prisma.motivation.create({

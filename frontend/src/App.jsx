@@ -5,23 +5,45 @@ import { useState } from 'react';
 function App() {
   const [step, setStep] = useState('setup');
   const [userId, setUserId] = useState(null);
+  const [name, setName] = useState(''); // Added state for user's name
   const [whys, setWhys] = useState(['']);
   const [motivation, setMotivation] = useState('');
+  const [error, setError] = useState(''); // Added state for displaying errors
 
   const handleSetup = async () => {
-    const response = await axios.post('http://localhost:3001/api/users', {
-      name: 'User',
-      whys: whys.filter(w => w.trim()),
-    });
-    setUserId(response.data.id);
-    setStep('generate');
+    setError(''); // Clear previous errors
+    if (!name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
+    try {
+      const response = await axios.post('http://localhost:3001/api/users', {
+        name: name, // Use the name from state
+        whys: whys.filter(w => w.trim()).length > 0 ? whys.filter(w => w.trim()) : ['No specific whys provided'],
+      });
+      setUserId(response.data.id);
+      setStep('generate');
+    } catch (err) {
+      console.error("Error creating profile:", err);
+      setError(`Failed to create profile: ${err.response?.data?.error || err.message}`);
+    }
   };
 
   const generateMotivation = async () => {
-    const response = await axios.post(
-      `http://localhost:3001/api/generate-motivation/${userId}`
-    );
-    setMotivation(response.data.motivation);
+    setError(''); // Clear previous errors
+    if (!userId) {
+      setError('User ID is missing. Cannot generate motivation.');
+      return;
+    }
+    try {
+      const response = await axios.post(
+        `http://localhost:3001/api/generate-motivation/${userId}`
+      );
+      setMotivation(response.data.motivation);
+    } catch (err) {
+      console.error("Error generating motivation:", err);
+      setError(`Failed to generate motivation: ${err.response?.data?.error || err.message}`);
+    }
   };
 
   return (
@@ -29,9 +51,23 @@ function App() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">Motivation Generator</h1>
         
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <strong className="font-bold">Error:</strong>
+            <span className="block sm:inline"> {error}</span>
+          </div>
+        )}
+
         {step === 'setup' && (
           <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-xl mb-4">Tell us your "whys"</h2>
+            <input
+              type="text"
+              className="w-full p-2 border rounded mb-4" // Increased mb
+              placeholder="Your Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
             {whys.map((why, index) => (
               <input
                 key={index}
